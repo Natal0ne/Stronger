@@ -17,7 +17,15 @@ class ActiveWorkoutScreen extends StatefulWidget {
   final String? routineId;
   final String? initialTitle;
 
-  const ActiveWorkoutScreen({super.key, this.routineId, this.initialTitle});
+  /// When set, opens in edit mode (completed session) or start mode (scheduled).
+  final WorkoutSession? existingSession;
+
+  const ActiveWorkoutScreen({
+    super.key,
+    this.routineId,
+    this.initialTitle,
+    this.existingSession,
+  });
 
   @override
   State<ActiveWorkoutScreen> createState() => _ActiveWorkoutScreenState();
@@ -33,8 +41,8 @@ class _PerformedExerciseDraft {
 
 class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   final List<_PerformedExerciseDraft> _performed = [];
-  final DateTime _startedAt = DateTime.now();
-  late final Stopwatch _stopwatch;
+  late DateTime _startedAt;
+  Stopwatch? _stopwatch;
   Timer? _ticker;
   Duration _elapsed = Duration.zero;
 
@@ -44,6 +52,14 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   List<Exercise> _availableExercises = [];
   bool _loadingExercises = true;
+
+  bool get _isEditing =>
+      widget.existingSession?.status == WorkoutStatus.completed;
+
+  bool get _isStartingScheduled =>
+      widget.existingSession?.status == WorkoutStatus.scheduled;
+
+  bool get _isLiveWorkout => !_isEditing;
 
   Color _getDifficultyColor(Difficulty level) {
     switch (level) {
@@ -92,32 +108,112 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   @override
   void initState() {
     super.initState();
-    _titleController.text = widget.initialTitle ?? 'Freestyle Workout';
-    _stopwatch = Stopwatch()..start();
-    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      setState(() => _elapsed = _stopwatch.elapsed);
-    });
+    final existing = widget.existingSession;
+    if (existing != null) {
+      _startedAt = existing.date;
+      _titleController.text = existing.title;
+      _fatigueLevel = existing.fatigueLevel > 0 ? existing.fatigueLevel : 3;
+      _notesController.text = existing.notes;
+      _elapsed = Duration(minutes: existing.durationMinutes);
+    } else {
+      _startedAt = DateTime.now();
+      _titleController.text = widget.initialTitle ?? 'Freestyle Workout';
+    }
+
+    if (_isLiveWorkout) {
+      _stopwatch = Stopwatch()..start();
+      _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) return;
+        setState(() => _elapsed = _stopwatch!.elapsed);
+      });
+    }
     _loadExercises();
   }
 
   Future<void> _loadExercises() async {
     final exercises = await DatabaseHelper.instance.getExercises();
     if (!mounted) return;
+
+    final exerciseById = {for (var ex in exercises) ex.id: ex};
+
+    if (widget.existingSession != null) {
+      final session = widget.existingSession!;
+      if (_isStartingScheduled && session.routineId.isNotEmpty) {
+        await _prefillFromRoutine(session.routineId, exerciseById);
+      } else {
+        _prefillFromSession(session, exerciseById);
+      }
+    } else if (widget.routineId != null && widget.routineId!.isNotEmpty) {
+      await _prefillFromRoutine(widget.routineId!, exerciseById);
+    }
+
     setState(() {
       _availableExercises = exercises;
       _loadingExercises = false;
     });
   }
 
+  Future<void> _prefillFromRoutine(
+    String routineId,
+    Map<String, Exercise> exerciseById,
+  ) async {
+    final routineExercises =
+        await DatabaseHelper.instance.getExercisesForRoutine(routineId);
+    for (var re in routineExercises) {
+      final exercise = exerciseById[re.exerciseId];
+      if (exercise == null) continue;
+      final sets = List.generate(
+        re.sets,
+        (i) => ExerciseSet(
+          setNumber: i + 1,
+          reps: re.reps,
+          weightKg: 0,
+          isCompleted: false,
+        ),
+      );
+      _performed.add(_PerformedExerciseDraft(exercise: exercise, sets: sets));
+    }
+  }
+
+  void _prefillFromSession(
+    WorkoutSession session,
+    Map<String, Exercise> exerciseById,
+  ) {
+    for (var pe in session.performedExercises) {
+      final exercise = exerciseById[pe.exerciseId];
+      if (exercise == null) continue;
+      _performed.add(
+        _PerformedExerciseDraft(
+          exercise: exercise,
+          sets: pe.sets
+              .map(
+                (s) => ExerciseSet(
+                  setNumber: s.setNumber,
+                  reps: s.reps,
+                  weightKg: s.weightKg,
+                  isCompleted: s.isCompleted,
+                ),
+              )
+              .toList(),
+        ),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _ticker?.cancel();
-    _stopwatch.stop();
+    _stopwatch?.stop();
     _notesController.dispose();
     _titleController.dispose();
     super.dispose();
   }
+
+  void _removeExercise(int exerciseIndex) {
+    setState(() => _performed.removeAt(exerciseIndex));
+  }
+
+  void _dismissKeyboard() => FocusScope.of(context).unfocus();
 
   String get _elapsedLabel {
     final minutes = _elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
@@ -405,20 +501,25 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   bool get _hasLoggedAnySet =>
       _performed.any((p) => p.sets.any((s) => s.isCompleted));
 
-  Future<void> _finishWorkout() async {
-    _stopwatch.stop();
-    _ticker?.cancel();
+  Future<void> _saveWorkout() async {
+    if (_isLiveWorkout) {
+      _stopwatch?.stop();
+      _ticker?.cancel();
+    }
+
+    final dialogTitle = _isEditing ? 'Save changes?' : 'Finish workout?';
+    final dialogContent = _isEditing
+        ? 'Your changes to this workout will be saved.'
+        : _hasLoggedAnySet
+        ? 'This will save the session to your history.'
+        : 'No sets were marked as completed. The session will still be saved as completed with zero volume.';
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
-        title: const Text('Finish workout?'),
-        content: Text(
-          _hasLoggedAnySet
-              ? 'This will save the session to your history.'
-              : 'No sets were marked as completed. The session will still be saved as completed with zero volume.',
-        ),
+        title: Text(dialogTitle),
+        content: Text(dialogContent),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -434,22 +535,30 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     );
 
     if (confirmed != true) {
-      // Resume timer if the user cancels
-      _stopwatch.start();
-      _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (!mounted) return;
-        setState(() => _elapsed = _stopwatch.elapsed);
-      });
+      if (_isLiveWorkout) {
+        _stopwatch?.start();
+        _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+          if (!mounted) return;
+          setState(() => _elapsed = _stopwatch!.elapsed);
+        });
+      }
       return;
     }
 
+    final existing = widget.existingSession;
+    final sessionId = existing?.id ??
+        'sess_${DateTime.now().millisecondsSinceEpoch}';
+    final routineId = existing?.routineId ??
+        widget.routineId ??
+        '';
+
     final session = WorkoutSession(
-      id: 'sess_${DateTime.now().millisecondsSinceEpoch}',
+      id: sessionId,
       title: _titleController.text.trim().isEmpty
           ? 'Freestyle Workout'
           : _titleController.text.trim(),
       date: _startedAt,
-      routineId: widget.routineId ?? '',
+      routineId: routineId,
       performedExercises: _performed
           .map(
             (p) => PerformedExercise(exerciseId: p.exercise.id, sets: p.sets),
@@ -468,6 +577,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   }
 
   Future<void> _discardWorkout() async {
+    if (_isEditing) {
+      Navigator.of(context).pop(false);
+      return;
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -497,14 +611,17 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: false,
+      canPop: _isEditing,
       onPopInvokedWithResult: (didPop, result) {
-        if (!didPop) _discardWorkout();
+        if (!didPop && !_isEditing) _discardWorkout();
       },
-      child: Scaffold(
+      child: GestureDetector(
+        onTap: _dismissKeyboard,
+        behavior: HitTestBehavior.translucent,
+        child: Scaffold(
         appBar: AppBar(
           leading: IconButton(
-            icon: const Icon(Icons.close),
+            icon: Icon(_isEditing ? Icons.arrow_back : Icons.close),
             onPressed: _discardWorkout,
           ),
           title: TextField(
@@ -513,30 +630,31 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               fontWeight: FontWeight.bold,
               color: AppColors.textPrimary,
             ),
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               border: InputBorder.none,
-              hintText: 'Workout title',
+              hintText: _isEditing ? 'Workout title' : 'Workout title',
             ),
           ),
           actions: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Center(
-                child: Row(
-                  children: [
-                    const Icon(Icons.timer, size: 16, color: AppColors.accent),
-                    const SizedBox(width: 4),
-                    Text(
-                      _elapsedLabel,
-                      style: const TextStyle(
-                        color: AppColors.accent,
-                        fontWeight: FontWeight.bold,
+            if (_isLiveWorkout)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Center(
+                  child: Row(
+                    children: [
+                      const Icon(Icons.timer, size: 16, color: AppColors.accent),
+                      const SizedBox(width: 4),
+                      Text(
+                        _elapsedLabel,
+                        style: const TextStyle(
+                          color: AppColors.accent,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
           ],
         ),
         body: _loadingExercises
@@ -567,6 +685,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                   for (var i = 0; i < _performed.length; i++)
                     _ExerciseCard(
                       draft: _performed[i],
+                      onRemoveExercise: () => _removeExercise(i),
                       onAddSet: () => _addSet(i),
                       onRemoveSet: (setIndex) => _removeSet(i, setIndex),
                       onUpdateSet: (setIndex, {reps, weightKg, isCompleted}) =>
@@ -701,7 +820,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: ElevatedButton(
-              onPressed: _performed.isEmpty ? null : _finishWorkout,
+              onPressed: _performed.isEmpty ? null : _saveWorkout,
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.accent,
                 minimumSize: const Size.fromHeight(48),
@@ -709,9 +828,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              child: const Text(
-                'Finish Workout',
-                style: TextStyle(
+              child: Text(
+                _isEditing ? 'Save Changes' : 'Finish Workout',
+                style: const TextStyle(
                   color: Colors.black,
                   fontWeight: FontWeight.bold,
                 ),
@@ -720,12 +839,14 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           ),
         ),
       ),
+      ),
     );
   }
 }
 
 class _ExerciseCard extends StatelessWidget {
   final _PerformedExerciseDraft draft;
+  final VoidCallback onRemoveExercise;
   final VoidCallback onAddSet;
   final void Function(int setIndex) onRemoveSet;
   final void Function(
@@ -738,6 +859,7 @@ class _ExerciseCard extends StatelessWidget {
 
   const _ExerciseCard({
     required this.draft,
+    required this.onRemoveExercise,
     required this.onAddSet,
     required this.onRemoveSet,
     required this.onUpdateSet,
@@ -800,13 +922,38 @@ class _ExerciseCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            draft.exercise.name,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              color: AppColors.textPrimary,
-              fontSize: 16,
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  draft.exercise.name,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: Colors.redAccent.withAlpha(20),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: IconButton(
+                  padding: EdgeInsets.zero,
+                  iconSize: 18,
+                  tooltip: 'Remove exercise',
+                  icon: const Icon(
+                    Icons.delete_outline,
+                    color: Colors.redAccent,
+                  ),
+                  onPressed: onRemoveExercise,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 6),
           Wrap(
@@ -830,6 +977,7 @@ class _ExerciseCard extends StatelessWidget {
           const SizedBox(height: 16),
           for (var i = 0; i < draft.sets.length; i++)
             _SetRow(
+              setIndex: i,
               set: draft.sets[i],
               onRemove: () => onRemoveSet(i),
               onUpdate: ({reps, weightKg, isCompleted}) => onUpdateSet(
@@ -857,12 +1005,14 @@ class _ExerciseCard extends StatelessWidget {
 }
 
 class _SetRow extends StatelessWidget {
+  final int setIndex;
   final ExerciseSet set;
   final VoidCallback onRemove;
   final void Function({int? reps, double? weightKg, bool? isCompleted})
   onUpdate;
 
   const _SetRow({
+    required this.setIndex,
     required this.set,
     required this.onRemove,
     required this.onUpdate,
@@ -870,59 +1020,60 @@ class _SetRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 28,
-            child: Text(
-              '${set.setNumber}',
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontWeight: FontWeight.bold,
+    return Dismissible(
+      key: ValueKey('set_$setIndex'),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 12),
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: Colors.redAccent.withAlpha(30),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Icon(Icons.delete_outline, color: Colors.redAccent),
+      ),
+      onDismissed: (_) => onRemove(),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 28,
+              child: Text(
+                '${set.setNumber}',
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
-          ),
-          Expanded(
-            child: _NumberField(
-              label: 'Weight',
-              icon: Icons.fitness_center_outlined,
-              value: set.weightKg,
-              onChanged: (v) => onUpdate(weightKg: v),
+            Expanded(
+              child: _NumberField(
+                label: 'Weight',
+                icon: Icons.fitness_center_outlined,
+                value: set.weightKg,
+                onChanged: (v) => onUpdate(weightKg: v),
+              ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _NumberField(
-              label: 'Reps',
-              icon: Icons.repeat,
-              value: set.reps.toDouble(),
-              isInt: true,
-              onChanged: (v) => onUpdate(reps: v.round()),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _NumberField(
+                label: 'Reps',
+                icon: Icons.repeat,
+                value: set.reps.toDouble(),
+                isInt: true,
+                onChanged: (v) => onUpdate(reps: v.round()),
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Checkbox(
-            value: set.isCompleted,
-            activeColor: AppColors.accent,
-            onChanged: (v) => onUpdate(isCompleted: v ?? false),
-          ),
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: Colors.redAccent.withAlpha(20),
-              borderRadius: BorderRadius.circular(8),
+            const SizedBox(width: 8),
+            Checkbox(
+              value: set.isCompleted,
+              activeColor: AppColors.accent,
+              onChanged: (v) => onUpdate(isCompleted: v ?? false),
             ),
-            child: IconButton(
-              padding: EdgeInsets.zero,
-              iconSize: 18,
-              icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-              onPressed: onRemove,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

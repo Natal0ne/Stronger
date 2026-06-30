@@ -4,30 +4,42 @@ import 'package:stronger/models/workout_session.dart';
 import 'package:stronger/models/enums.dart';
 import 'package:stronger/services/database_helper.dart';
 import 'active_workout_screen.dart';
+import 'workout_planning_screen.dart';
 
 class WorkoutScreen extends StatefulWidget {
   const WorkoutScreen({super.key});
 
   @override
-  State<WorkoutScreen> createState() => _WorkoutScreenState();
+  State<WorkoutScreen> createState() => WorkoutScreenState();
 }
 
-class _WorkoutScreenState extends State<WorkoutScreen> {
+class WorkoutScreenState extends State<WorkoutScreen> {
   late Future<List<WorkoutSession>> _historyFuture;
+  late Future<List<WorkoutSession>> _scheduledFuture;
   Map<String, String> _exerciseNames = {};
 
   @override
   void initState() {
     super.initState();
-    _historyFuture = DatabaseHelper.instance.getWorkoutSessions();
+    _refreshAll();
     _loadExerciseNames();
   }
 
-  void _refreshHistory() {
+  void refreshAll() {
     setState(() {
-      _historyFuture = DatabaseHelper.instance.getWorkoutSessions();
+      _historyFuture = DatabaseHelper.instance.getWorkoutSessions().then(
+        (sessions) => sessions
+            .where((s) => s.status != WorkoutStatus.scheduled)
+            .toList(),
+      );
+      _scheduledFuture =
+          DatabaseHelper.instance.getScheduledSessionsForWeek(DateTime.now());
     });
   }
+
+  void _refreshAll() => refreshAll();
+
+  void _refreshHistory() => _refreshAll();
 
   Future<void> _loadExerciseNames() async {
     final exercises = await DatabaseHelper.instance.getExercises();
@@ -42,9 +54,31 @@ class _WorkoutScreenState extends State<WorkoutScreen> {
     final saved = await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => const ActiveWorkoutScreen()),
     );
-    if (saved == true) _refreshHistory();
+    if (saved == true) _refreshAll();
   }
 
+  Future<void> _startScheduledWorkout(WorkoutSession session) async {
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => ActiveWorkoutScreen(
+          existingSession: session,
+          routineId: session.routineId,
+          initialTitle: session.title,
+        ),
+      ),
+    );
+    if (saved == true) _refreshAll();
+  }
+
+  Future<void> _editWorkout(WorkoutSession session) async {
+    Navigator.pop(context);
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => ActiveWorkoutScreen(existingSession: session),
+      ),
+    );
+    if (saved == true) _refreshAll();
+  }
   Future<void> _confirmDelete(WorkoutSession session) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -69,7 +103,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> {
     );
     if (confirmed == true) {
       await DatabaseHelper.instance.deleteWorkoutSession(session.id);
-      _refreshHistory();
+      _refreshAll();
     }
   }
 
@@ -109,6 +143,12 @@ class _WorkoutScreenState extends State<WorkoutScreen> {
                       ),
                     ),
                   ),
+                  if (isCompleted)
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined, color: AppColors.accent),
+                      tooltip: 'Edit workout',
+                      onPressed: () => _editWorkout(session),
+                    ),
                   IconButton(
                     icon: const Icon(
                       Icons.delete_outline,
@@ -391,83 +431,179 @@ class _WorkoutScreenState extends State<WorkoutScreen> {
   }
 
   Widget _buildStartTab(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Quick Start',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Card(
-            color: Theme.of(context).colorScheme.surfaceContainer,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: ListTile(
-              contentPadding: const EdgeInsets.all(16),
-              leading: const CircleAvatar(
-                backgroundColor: AppColors.accent,
-                child: Icon(Icons.flash_on, color: Colors.black),
+    return RefreshIndicator(
+      onRefresh: () async => _refreshAll(),
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Quick Start',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
               ),
-              title: const Text(
-                'Start an Empty Workout',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
+            ),
+            const SizedBox(height: 12),
+            Card(
+              color: Theme.of(context).colorScheme.surfaceContainer,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: ListTile(
+                contentPadding: const EdgeInsets.all(16),
+                leading: const CircleAvatar(
+                  backgroundColor: AppColors.accent,
+                  child: Icon(Icons.flash_on, color: Colors.black),
                 ),
-              ),
-              subtitle: const Text(
-                'Log a freestyle workout without a predefined routine',
-                style: TextStyle(color: AppColors.textSecondary),
-              ),
-              trailing: const Icon(
-                Icons.keyboard_arrow_right,
-                color: AppColors.textSecondary,
-              ),
-              onTap: _startEmptyWorkout,
-            ),
-          ),
-          const SizedBox(height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Scheduled Sessions',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+                title: const Text(
+                  'Start an Empty Workout',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                subtitle: const Text(
+                  'Log a freestyle workout without a predefined routine',
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
+                trailing: const Icon(
+                  Icons.keyboard_arrow_right,
                   color: AppColors.textSecondary,
                 ),
-              ),
-              TextButton(
-                onPressed: () {},
-                child: const Text(
-                  'Plan New',
-                  style: TextStyle(color: AppColors.accent),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          const Center(
-            child: Padding(
-              padding: EdgeInsets.symmetric(vertical: 32.0),
-              child: Text(
-                'No other sessions scheduled for this week.',
-                style: TextStyle(color: AppColors.textSecondary),
+                onTap: _startEmptyWorkout,
               ),
             ),
-          ),
-        ],
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Scheduled Sessions',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    await Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const WorkoutPlanningScreen(),
+                      ),
+                    );
+                    _refreshAll();
+                  },
+                  child: const Text(
+                    'Plan New',
+                    style: TextStyle(color: AppColors.accent),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            FutureBuilder<List<WorkoutSession>>(
+              future: _scheduledFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 32),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+
+                final scheduled = snapshot.data ?? [];
+                if (scheduled.isEmpty) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 32.0),
+                      child: Text(
+                        'No sessions scheduled for this week.\nTap "Plan New" to assign routines.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: AppColors.textSecondary),
+                      ),
+                    ),
+                  );
+                }
+
+                return Column(
+                  children: scheduled.map((session) {
+                    final isToday = _isSameDay(session.date, DateTime.now());
+                    return Card(
+                      color: Theme.of(context).colorScheme.surfaceContainer,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: isToday
+                            ? const BorderSide(color: AppColors.accent)
+                            : BorderSide.none,
+                      ),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        leading: CircleAvatar(
+                          backgroundColor: isToday
+                              ? AppColors.accent.withAlpha(50)
+                              : Colors.white.withAlpha(15),
+                          child: Icon(
+                            Icons.calendar_today,
+                            color: isToday ? AppColors.accent : Colors.grey,
+                            size: 20,
+                          ),
+                        ),
+                        title: Text(
+                          session.title,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        subtitle: Text(
+                          '${session.date.weekday == 7 ? 'Sun' : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][session.date.weekday - 1]} ${session.date.day}/${session.date.month} · ${session.durationMinutes} min',
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                        trailing: ElevatedButton(
+                          onPressed: () => _startScheduledWorkout(session),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.accent,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            minimumSize: const Size(0, 36),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: const Text(
+                            'Start',
+                            style: TextStyle(
+                              color: Colors.black,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  bool _isSameDay(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
   Widget _buildHistoryTab(BuildContext context) {

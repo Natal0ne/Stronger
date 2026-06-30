@@ -14,13 +14,24 @@ class MainNavigation extends StatefulWidget {
 
 class _MainNavigationState extends State<MainNavigation> {
   int _currentIndex = 0;
+  final _homeKey = GlobalKey<HomeScreenState>();
+  final _workoutKey = GlobalKey<WorkoutScreenState>();
 
-  final List<Widget> _screens = [
-    const HomeScreen(),
-    const WorkoutScreen(),
+  late final List<Widget> _screens = [
+    HomeScreen(key: _homeKey),
+    WorkoutScreen(key: _workoutKey),
     const RoutinesScreen(),
     const ExercisesScreen(),
   ];
+
+  void _onDestinationSelected(int index) {
+    setState(() => _currentIndex = index);
+    if (index == 0) {
+      _homeKey.currentState?.reloadDashboard();
+    } else if (index == 1) {
+      _workoutKey.currentState?.refreshAll();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,11 +39,7 @@ class _MainNavigationState extends State<MainNavigation> {
       body: IndexedStack(index: _currentIndex, children: _screens),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
-        onDestinationSelected: (int index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
+        onDestinationSelected: _onDestinationSelected,
         backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
         indicatorColor: AppColors.accent,
         destinations: const [

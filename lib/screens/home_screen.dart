@@ -1,15 +1,77 @@
 import 'package:flutter/material.dart';
+import 'package:stronger/models/enums.dart';
+import 'package:stronger/models/workout_session.dart';
+import 'package:stronger/services/database_helper.dart';
 import 'package:stronger/theme/app_colors.dart';
+import 'active_workout_screen.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
+  State<HomeScreen> createState() => HomeScreenState();
+}
+
+class HomeScreenState extends State<HomeScreen> {
+  int _completedThisWeek = 0;
+  int _scheduledThisWeek = 0;
+  int _routineCount = 0;
+  int _exerciseCount = 0;
+  WorkoutSession? _todaySession;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    reloadDashboard();
+  }
+
+  /// Called when the Home tab becomes visible again.
+  Future<void> reloadDashboard() async {
+    setState(() => _loading = true);
+
+    final db = DatabaseHelper.instance;
+    final completed = await db.countCompletedWorkoutsThisWeek();
+    final scheduled = await db.countScheduledSessionsThisWeek();
+    final routines = await db.countRoutines();
+    final exercises = await db.countExercises();
+    final todaySessions = await db.getSessionsForDay(DateTime.now());
+
+    WorkoutSession? todayScheduled;
+    for (var session in todaySessions) {
+      if (session.status == WorkoutStatus.scheduled) {
+        todayScheduled = session;
+        break;
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _completedThisWeek = completed;
+      _scheduledThisWeek = scheduled;
+      _routineCount = routines;
+      _exerciseCount = exercises;
+      _todaySession = todayScheduled;
+      _loading = false;
+    });
+  }
+
+  Future<void> _startTodayWorkout() async {
+    if (_todaySession == null) return;
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => ActiveWorkoutScreen(
+          existingSession: _todaySession,
+          routineId: _todaySession!.routineId,
+          initialTitle: _todaySession!.title,
+        ),
+      ),
+    );
+    if (saved == true) reloadDashboard();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final completedWorkoutsThisWeek = 3;
-
-    final themeColors = Theme.of(context).colorScheme;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -25,45 +87,47 @@ class HomeScreen extends StatelessWidget {
               Icons.account_circle,
               color: AppColors.textPrimary,
             ),
-            onPressed: () {
-              // Optional: Navigate to profile/settings if needed later
-            },
+            onPressed: () {},
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildWelcomeHeader(context, completedWorkoutsThisWeek),
-            const SizedBox(height: 24),
-
-            const Text(
-              'Today\'s Workout',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textSecondary,
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: reloadDashboard,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildWelcomeHeader(context, _completedThisWeek),
+                    const SizedBox(height: 24),
+                    const Text(
+                      'Today\'s Workout',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _buildTodayWorkoutCard(context),
+                    const SizedBox(height: 24),
+                    const Text(
+                      'Your Progress',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _buildStatsGrid(context),
+                  ],
+                ),
               ),
             ),
-            const SizedBox(height: 10),
-            _buildTodayWorkoutCard(context),
-            const SizedBox(height: 24),
-
-            const Text(
-              'Your Progress',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 10),
-            _buildStatsGrid(context),
-          ],
-        ),
-      ),
     );
   }
 
@@ -79,7 +143,7 @@ class HomeScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Hello [name]! 👋',
+            'Hello! 👋',
             style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.bold,
@@ -88,7 +152,9 @@ class HomeScreen extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'You have completed $completed workouts this week. Keep it up!',
+            completed > 0
+                ? 'You have completed $completed workout${completed == 1 ? '' : 's'} this week. Keep it up!'
+                : 'No workouts completed yet this week. Plan your sessions and get started!',
             style: const TextStyle(
               fontSize: 14,
               color: AppColors.textSecondary,
@@ -100,9 +166,37 @@ class HomeScreen extends StatelessWidget {
   }
 
   Widget _buildTodayWorkoutCard(BuildContext context) {
-    const workoutTitle = "Monday Routine - Chest & Tricipes";
-    const estimatedDuration = "60 min";
+    if (_todaySession == null) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainer,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'No workout planned for today',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Head to Workout → Plan New to schedule your week.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
 
+    final session = _todaySession!;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -138,13 +232,13 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ),
               ),
-              const Row(
+              Row(
                 children: [
-                  Icon(Icons.access_time, size: 16, color: Colors.black87),
-                  SizedBox(width: 4),
+                  const Icon(Icons.access_time, size: 16, color: Colors.black87),
+                  const SizedBox(width: 4),
                   Text(
-                    estimatedDuration,
-                    style: TextStyle(
+                    '${session.durationMinutes} min',
+                    style: const TextStyle(
                       color: Colors.black87,
                       fontWeight: FontWeight.bold,
                     ),
@@ -154,9 +248,9 @@ class HomeScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          const Text(
-            workoutTitle,
-            style: TextStyle(
+          Text(
+            session.title,
+            style: const TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
               color: Colors.black,
@@ -166,13 +260,7 @@ class HomeScreen extends StatelessWidget {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Starting Guided Workout... 🚀'),
-                  ),
-                );
-              },
+              onPressed: _startTodayWorkout,
               icon: const Icon(Icons.play_arrow, color: Colors.white),
               label: const Text(
                 'START WORKOUT',
@@ -196,81 +284,123 @@ class HomeScreen extends StatelessWidget {
   }
 
   Widget _buildStatsGrid(BuildContext context) {
-    return GridView.count(
-      crossAxisCount: 2,
-      crossAxisSpacing: 12,
-      mainAxisSpacing: 12,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
+    return Column(
       children: [
-        _buildStatItem(
-          context,
-          'Active Routines',
-          '4',
-          Icons.assignment,
-          Colors.blueAccent,
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: _buildStatItem(
+                  context,
+                  label: 'Completed',
+                  subtitle: 'This week',
+                  value: '$_completedThisWeek',
+                  icon: Icons.check_circle_outline,
+                  iconColor: AppColors.accent,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildStatItem(
+                  context,
+                  label: 'Planned',
+                  subtitle: 'This week',
+                  value: '$_scheduledThisWeek',
+                  icon: Icons.event_available,
+                  iconColor: Colors.blueAccent,
+                ),
+              ),
+            ],
+          ),
         ),
-        _buildStatItem(
-          context,
-          'Total Exercises',
-          '42',
-          Icons.fitness_center,
-          Colors.orangeAccent,
-        ),
-        _buildStatItem(
-          context,
-          'Open Goals',
-          '2',
-          Icons.flag,
-          AppColors.advanced,
-        ),
-        _buildStatItem(
-          context,
-          'Total Volume',
-          '14.2 tons',
-          Icons.bar_chart,
-          Colors.purpleAccent,
+        const SizedBox(height: 12),
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: _buildStatItem(
+                  context,
+                  label: 'Routines',
+                  subtitle: 'Created',
+                  value: '$_routineCount',
+                  icon: Icons.fitness_center,
+                  iconColor: AppColors.advanced,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildStatItem(
+                  context,
+                  label: 'Exercises',
+                  subtitle: 'Saved',
+                  value: '$_exerciseCount',
+                  icon: Icons.list_alt,
+                  iconColor: Colors.purpleAccent,
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );
   }
 
   Widget _buildStatItem(
-    BuildContext context,
-    String label,
-    String value,
-    IconData icon,
-    Color iconColor,
-  ) {
+    BuildContext context, {
+    required String label,
+    required String subtitle,
+    required String value,
+    required IconData icon,
+    required Color iconColor,
+  }) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainer,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          CircleAvatar(
-            backgroundColor: iconColor.withValues(alpha: 0.1),
-            radius: 20,
-            child: Icon(icon, color: iconColor, size: 20),
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: iconColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: iconColor, size: 22),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           Text(
             value,
+            textAlign: TextAlign.center,
             style: const TextStyle(
-              fontSize: 22,
+              fontSize: 24,
               fontWeight: FontWeight.bold,
               color: AppColors.textPrimary,
+              height: 1.1,
             ),
           ),
           const SizedBox(height: 4),
           Text(
             label,
+            textAlign: TextAlign.center,
             style: const TextStyle(
-              fontSize: 12,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 11,
               color: AppColors.textSecondary,
             ),
           ),

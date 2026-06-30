@@ -5,6 +5,8 @@ import 'package:stronger/models/exercise_set.dart';
 import 'package:stronger/models/routine.dart';
 import 'package:stronger/models/routine_exercise.dart';
 import 'package:stronger/models/workout_session.dart';
+import 'package:stronger/models/recurring_schedule.dart';
+import 'package:stronger/models/enums.dart';
 import 'package:stronger/services/default_exercises.dart';
 import 'package:stronger/services/default_routines.dart';
 
@@ -25,8 +27,9 @@ class DatabaseHelper {
     final path = join(dbPath, filePath);
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _createDB,
+      onUpgrade: _upgradeDB,
       onConfigure: _onConfigure,
     );
   }
@@ -98,8 +101,38 @@ class DatabaseHelper {
     )
     ''');
 
+    await db.execute('''
+    CREATE TABLE recurring_schedules (
+      id TEXT PRIMARY KEY,
+      routineId TEXT NOT NULL,
+      weekday INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      durationMinutes INTEGER NOT NULL,
+      notes TEXT NOT NULL DEFAULT '',
+      FOREIGN KEY (routineId) REFERENCES routines (id) ON DELETE CASCADE,
+      UNIQUE(weekday)
+    )
+    ''');
+
     await _seedDefaultExercises(db);
     await _seedDefaultRoutines(db);
+  }
+
+  Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('''
+      CREATE TABLE IF NOT EXISTS recurring_schedules (
+        id TEXT PRIMARY KEY,
+        routineId TEXT NOT NULL,
+        weekday INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        durationMinutes INTEGER NOT NULL,
+        notes TEXT NOT NULL DEFAULT '',
+        FOREIGN KEY (routineId) REFERENCES routines (id) ON DELETE CASCADE,
+        UNIQUE(weekday)
+      )
+      ''');
+    }
   }
 
   // --- CRUD Methods for Routines ---
@@ -332,6 +365,180 @@ class DatabaseHelper {
   Future<void> deleteWorkoutSession(String id) async {
     final db = await instance.database;
     await db.delete('workout_sessions', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// Returns sessions whose [date] falls on the same calendar day as [day].
+  Future<List<WorkoutSession>> getSessionsForDay(DateTime day) async {
+    await ensureRecurringSessionsForWeek(_startOfWeek(day));
+    final start = DateTime(day.year, day.month, day.day);
+    final end = start.add(const Duration(days: 1));
+    return getSessionsBetween(start, end);
+  }
+
+  /// Returns all sessions with [date] in `[start, end)`.
+  Future<List<WorkoutSession>> getSessionsBetween(
+    DateTime start,
+    DateTime end,
+  ) async {
+    final db = await instance.database;
+    final sessionMaps = await db.query(
+      'workout_sessions',
+      where: 'date >= ? AND date < ?',
+      whereArgs: [start.toIso8601String(), end.toIso8601String()],
+      orderBy: 'date ASC',
+    );
+
+    final sessions = <WorkoutSession>[];
+    for (var sessionMap in sessionMaps) {
+      final performedExercises = await _getPerformedExercisesForSession(
+        db,
+        sessionMap['id'] as String,
+      );
+      sessions.add(WorkoutSession.fromMap(sessionMap, performedExercises));
+    }
+    return sessions;
+  }
+
+  /// Scheduled sessions for the week containing [referenceDate] (Mon–Sun).
+  Future<List<WorkoutSession>> getScheduledSessionsForWeek(
+    DateTime referenceDate,
+  ) async {
+    final weekStart = _startOfWeek(referenceDate);
+    await ensureRecurringSessionsForWeek(weekStart);
+    final weekEnd = weekStart.add(const Duration(days: 7));
+    final db = await instance.database;
+    final sessionMaps = await db.query(
+      'workout_sessions',
+      where: 'status = ? AND date >= ? AND date < ?',
+      whereArgs: [
+        WorkoutStatus.scheduled.name,
+        weekStart.toIso8601String(),
+        weekEnd.toIso8601String(),
+      ],
+      orderBy: 'date ASC',
+    );
+
+    final sessions = <WorkoutSession>[];
+    for (var sessionMap in sessionMaps) {
+      final performedExercises = await _getPerformedExercisesForSession(
+        db,
+        sessionMap['id'] as String,
+      );
+      sessions.add(WorkoutSession.fromMap(sessionMap, performedExercises));
+    }
+    return sessions;
+  }
+
+  Future<int> countCompletedWorkoutsThisWeek() async {
+    final weekStart = _startOfWeek(DateTime.now());
+    final weekEnd = weekStart.add(const Duration(days: 7));
+    final db = await instance.database;
+    final result = await db.rawQuery(
+      '''
+      SELECT COUNT(*) as cnt FROM workout_sessions
+      WHERE status = ? AND date >= ? AND date < ?
+      ''',
+      [
+        WorkoutStatus.completed.name,
+        weekStart.toIso8601String(),
+        weekEnd.toIso8601String(),
+      ],
+    );
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  Future<int> countScheduledSessionsThisWeek() async {
+    final weekStart = _startOfWeek(DateTime.now());
+    final sessions = await getScheduledSessionsForWeek(weekStart);
+    return sessions.length;
+  }
+
+  Future<int> countExercises() async {
+    final exercises = await getExercises();
+    return exercises.length;
+  }
+
+  Future<int> countRoutines() async {
+    final routines = await getRoutines();
+    return routines.length;
+  }
+
+  // --- Recurring weekly schedules ---
+
+  Future<List<RecurringSchedule>> getRecurringSchedules() async {
+    final db = await instance.database;
+    final maps = await db.query(
+      'recurring_schedules',
+      orderBy: 'weekday ASC',
+    );
+    return maps.map(RecurringSchedule.fromMap).toList();
+  }
+
+  Future<RecurringSchedule?> getRecurringScheduleForWeekday(int weekday) async {
+    final db = await instance.database;
+    final maps = await db.query(
+      'recurring_schedules',
+      where: 'weekday = ?',
+      whereArgs: [weekday],
+      limit: 1,
+    );
+    if (maps.isEmpty) return null;
+    return RecurringSchedule.fromMap(maps.first);
+  }
+
+  Future<void> upsertRecurringSchedule(RecurringSchedule schedule) async {
+    final db = await instance.database;
+    await db.insert(
+      'recurring_schedules',
+      schedule.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteRecurringScheduleForWeekday(int weekday) async {
+    final db = await instance.database;
+    await db.delete(
+      'recurring_schedules',
+      where: 'weekday = ?',
+      whereArgs: [weekday],
+    );
+  }
+
+  /// Creates scheduled sessions from weekly templates when a day has none yet.
+  Future<void> ensureRecurringSessionsForWeek(DateTime weekStart) async {
+    final normalizedStart = _startOfWeek(weekStart);
+    final recurring = await getRecurringSchedules();
+    if (recurring.isEmpty) return;
+
+    for (final template in recurring) {
+      final dayOffset = template.weekday - 1;
+      final day = normalizedStart.add(Duration(days: dayOffset));
+      final existing = await getSessionsForDayUnchecked(day);
+      if (existing.isNotEmpty) continue;
+
+      final session = WorkoutSession(
+        id: 'recur_${template.id}_${day.year}${day.month}${day.day}',
+        title: template.title,
+        date: DateTime(day.year, day.month, day.day, 8),
+        routineId: template.routineId,
+        performedExercises: const [],
+        durationMinutes: template.durationMinutes,
+        status: WorkoutStatus.scheduled,
+        notes: template.notes,
+      );
+      await insertWorkoutSession(session);
+    }
+  }
+
+  Future<List<WorkoutSession>> getSessionsForDayUnchecked(DateTime day) async {
+    final start = DateTime(day.year, day.month, day.day);
+    final end = start.add(const Duration(days: 1));
+    return getSessionsBetween(start, end);
+  }
+
+  DateTime _startOfWeek(DateTime date) {
+    final weekday = date.weekday; // Mon=1 … Sun=7
+    return DateTime(date.year, date.month, date.day - (weekday - 1));
   }
 
   Future<void> _seedDefaultExercises(Database db) async {
