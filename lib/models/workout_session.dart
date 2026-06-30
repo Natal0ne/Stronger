@@ -12,7 +12,7 @@ class WorkoutSession {
   final String id;
   final String title; // Example: "Monday Workout - Chest"
   final DateTime date; // Date and time of the workout
-  final String routineId; // Reference to the routine used
+  final String routineId; // Reference to the routine used ('' if none)
 
   final List<PerformedExercise> performedExercises;
 
@@ -43,5 +43,72 @@ class WorkoutSession {
       }
     }
     return total;
+  }
+
+  int get totalCompletedSets {
+    int count = 0;
+    for (var exercise in performedExercises) {
+      count += exercise.sets.where((s) => s.isCompleted).length;
+    }
+    return count;
+  }
+
+  WorkoutSession copyWith({
+    String? title,
+    DateTime? date,
+    String? routineId,
+    List<PerformedExercise>? performedExercises,
+    int? durationMinutes,
+    WorkoutStatus? status,
+    int? fatigueLevel,
+    String? notes,
+  }) {
+    return WorkoutSession(
+      id: id,
+      title: title ?? this.title,
+      date: date ?? this.date,
+      routineId: routineId ?? this.routineId,
+      performedExercises: performedExercises ?? this.performedExercises,
+      durationMinutes: durationMinutes ?? this.durationMinutes,
+      status: status ?? this.status,
+      fatigueLevel: fatigueLevel ?? this.fatigueLevel,
+      notes: notes ?? this.notes,
+    );
+  }
+
+  // --- Persistence helpers ---
+  // Note: performedExercises/sets are stored in a separate table
+  // (exercise_sets) and are NOT included in this map. See
+  // DatabaseHelper.insertWorkoutSession / getWorkoutSessions.
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'title': title,
+      'date': date.toIso8601String(),
+      'routineId': routineId.isEmpty ? null : routineId,
+      'durationMinutes': durationMinutes,
+      'status': status.name,
+      'fatigueLevel': fatigueLevel,
+      'notes': notes,
+    };
+  }
+
+  factory WorkoutSession.fromMap(
+    Map<String, dynamic> map,
+    List<PerformedExercise> performedExercises,
+  ) {
+    return WorkoutSession(
+      id: map['id'] as String,
+      title: map['title'] as String,
+      date: DateTime.parse(map['date'] as String),
+      routineId: (map['routineId'] as String?) ?? '',
+      performedExercises: performedExercises,
+      durationMinutes: map['durationMinutes'] as int,
+      // NOTE: verify that WorkoutStatus enum values are named
+      // 'scheduled', 'completed', 'skipped' in your enums.dart.
+      status: WorkoutStatus.values.byName(map['status'] as String),
+      fatigueLevel: map['fatigueLevel'] as int,
+      notes: map['notes'] as String,
+    );
   }
 }
