@@ -586,6 +586,25 @@ class _RoutineEditorScreenState extends State<RoutineEditorScreen> {
                   return null;
                 },
               ),
+              const SizedBox(height: 20),
+              TextFormField(
+                controller: _descController,
+                style: const TextStyle(color: AppColors.textPrimary),
+                maxLines: 3,
+                minLines: 1,
+                decoration: const InputDecoration(
+                  labelText: 'Description (Optional)',
+                  labelStyle: TextStyle(color: Colors.grey),
+                  prefixIcon: Icon(
+                    Icons.description_outlined,
+                    color: AppColors.accent,
+                    size: 20,
+                  ),
+                ),
+                validator: (v) {
+                  return null;
+                },
+              ),
               const SizedBox(height: 24),
               const Row(
                 children: [
