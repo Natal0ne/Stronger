@@ -145,11 +145,12 @@ class _ExercisesScreenState extends State<ExercisesScreen> {
     required void Function(T?) onChanged,
   }) {
     return Container(
-      height: 36, // Altezza fissa per occupare meno spazio
+      height: 36,
       padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        color: Theme.of(context).colorScheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey.withAlpha(80)),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<T>(
@@ -158,7 +159,7 @@ class _ExercisesScreenState extends State<ExercisesScreen> {
             hint,
             style: const TextStyle(color: Colors.grey, fontSize: 13),
           ),
-          dropdownColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+          dropdownColor: Theme.of(context).colorScheme.surfaceContainerHigh,
           style: const TextStyle(
             color: AppColors.textPrimary,
             fontSize: 13,
@@ -193,20 +194,18 @@ class _ExercisesScreenState extends State<ExercisesScreen> {
       onTap: onPressed,
       borderRadius: BorderRadius.circular(20),
       child: Container(
-        height: 36, // Stessa identica altezza dei dropdown
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        height: 36,
+        width: 36,
         decoration: BoxDecoration(
           color: Colors.redAccent.withAlpha(20),
           borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.redAccent.withAlpha(60)),
         ),
         alignment: Alignment.center,
-        child: const Text(
-          'Clear',
-          style: TextStyle(
-            color: Colors.redAccent,
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-          ),
+        child: const Icon(
+          Icons.filter_alt_off,
+          color: Colors.redAccent,
+          size: 18,
         ),
       ),
     );
@@ -831,7 +830,7 @@ class _ExercisesScreenState extends State<ExercisesScreen> {
                 fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+                  borderSide: BorderSide(color: Colors.grey.withAlpha(80)),
                 ),
               ),
             ),

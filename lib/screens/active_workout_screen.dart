@@ -51,6 +51,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   final TextEditingController _titleController = TextEditingController();
 
   List<Exercise> _availableExercises = [];
+  Map<String, double> _lastWeights = {};
   bool _loadingExercises = true;
 
   bool get _isEditing =>
@@ -131,10 +132,20 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   }
 
   Future<void> _loadExercises() async {
-    final exercises = await DatabaseHelper.instance.getExercises();
+    final db = DatabaseHelper.instance;
+    final exercises = await db.getExercises();
     if (!mounted) return;
 
     final exerciseById = {for (var ex in exercises) ex.id: ex};
+    final isEditingExistingSets =
+        widget.existingSession != null &&
+        (widget.existingSession!.status == WorkoutStatus.completed ||
+            (widget.existingSession!.status == WorkoutStatus.scheduled &&
+                widget.existingSession!.performedExercises.isNotEmpty));
+
+    if (!isEditingExistingSets) {
+      _lastWeights = await db.getLastWeightsByExercise();
+    }
 
     if (widget.existingSession != null) {
       final session = widget.existingSession!;
@@ -157,17 +168,18 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     String routineId,
     Map<String, Exercise> exerciseById,
   ) async {
-    final routineExercises =
-        await DatabaseHelper.instance.getExercisesForRoutine(routineId);
+    final routineExercises = await DatabaseHelper.instance
+        .getExercisesForRoutine(routineId);
     for (var re in routineExercises) {
       final exercise = exerciseById[re.exerciseId];
       if (exercise == null) continue;
+      final lastWeight = _lastWeights[re.exerciseId] ?? 0;
       final sets = List.generate(
         re.sets,
         (i) => ExerciseSet(
           setNumber: i + 1,
           reps: re.reps,
-          weightKg: 0,
+          weightKg: lastWeight,
           isCompleted: false,
         ),
       );
@@ -457,7 +469,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         ExerciseSet(
           setNumber: draft.sets.length + 1,
           reps: draft.exercise.recommendedReps,
-          weightKg: 0,
+          weightKg: _lastWeights[draft.exercise.id] ?? 0,
           isCompleted: false,
         ),
       );
@@ -546,11 +558,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
 
     final existing = widget.existingSession;
-    final sessionId = existing?.id ??
-        'sess_${DateTime.now().millisecondsSinceEpoch}';
-    final routineId = existing?.routineId ??
-        widget.routineId ??
-        '';
+    final sessionId =
+        existing?.id ?? 'sess_${DateTime.now().millisecondsSinceEpoch}';
+    final routineId = existing?.routineId ?? widget.routineId ?? '';
 
     final session = WorkoutSession(
       id: sessionId,
@@ -619,226 +629,235 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         onTap: _dismissKeyboard,
         behavior: HitTestBehavior.translucent,
         child: Scaffold(
-        appBar: AppBar(
-          leading: IconButton(
-            icon: Icon(_isEditing ? Icons.arrow_back : Icons.close),
-            onPressed: _discardWorkout,
-          ),
-          title: TextField(
-            controller: _titleController,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              color: AppColors.textPrimary,
+          appBar: AppBar(
+            leading: IconButton(
+              icon: Icon(_isEditing ? Icons.arrow_back : Icons.close),
+              onPressed: _discardWorkout,
             ),
-            decoration: InputDecoration(
-              border: InputBorder.none,
-              hintText: _isEditing ? 'Workout title' : 'Workout title',
-            ),
-          ),
-          actions: [
-            if (_isLiveWorkout)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Center(
-                  child: Row(
-                    children: [
-                      const Icon(Icons.timer, size: 16, color: AppColors.accent),
-                      const SizedBox(width: 4),
-                      Text(
-                        _elapsedLabel,
-                        style: const TextStyle(
-                          color: AppColors.accent,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+            title: TextField(
+              controller: _titleController,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
               ),
-          ],
-        ),
-        body: _loadingExercises
-            ? const Center(child: CircularProgressIndicator())
-            : ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  if (_performed.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 48),
-                      child: Center(
-                        child: Column(
-                          children: [
-                            const Icon(
-                              Icons.fitness_center,
-                              size: 40,
-                              color: AppColors.textSecondary,
-                            ),
-                            const SizedBox(height: 12),
-                            const Text(
-                              'No exercises added yet',
-                              style: TextStyle(color: AppColors.textSecondary),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  for (var i = 0; i < _performed.length; i++)
-                    _ExerciseCard(
-                      draft: _performed[i],
-                      onRemoveExercise: () => _removeExercise(i),
-                      onAddSet: () => _addSet(i),
-                      onRemoveSet: (setIndex) => _removeSet(i, setIndex),
-                      onUpdateSet: (setIndex, {reps, weightKg, isCompleted}) =>
-                          _updateSet(
-                            i,
-                            setIndex,
-                            reps: reps,
-                            weightKg: weightKg,
-                            isCompleted: isCompleted,
-                          ),
-                    ),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: _addExerciseDialog,
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(46),
-                      side: const BorderSide(color: AppColors.accent),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    icon: const Icon(Icons.add, color: AppColors.accent),
-                    label: const Text(
-                      'Add Exercise',
-                      style: TextStyle(
-                        color: AppColors.accent,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  const Row(
-                    children: [
-                      Icon(Icons.bolt, color: AppColors.accent, size: 18),
-                      SizedBox(width: 8),
-                      Text(
-                        'Perceived Fatigue (RPE)',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.textPrimary,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceContainerHigh,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                hintText: _isEditing ? 'Workout title' : 'Workout title',
+              ),
+            ),
+            actions: [
+              if (_isLiveWorkout)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Center(
                     child: Row(
                       children: [
-                        Expanded(
-                          child: SliderTheme(
-                            data: SliderTheme.of(context).copyWith(
-                              activeTrackColor: AppColors.accent,
-                              thumbColor: AppColors.accent,
-                              inactiveTrackColor: Colors.grey.withAlpha(60),
-                              overlayColor: AppColors.accent.withAlpha(40),
-                            ),
-                            child: Slider(
-                              value: _fatigueLevel.toDouble(),
-                              min: 1,
-                              max: 5,
-                              divisions: 4,
-                              label: '$_fatigueLevel',
-                              onChanged: (v) =>
-                                  setState(() => _fatigueLevel = v.round()),
-                            ),
-                          ),
+                        const Icon(
+                          Icons.timer,
+                          size: 16,
+                          color: AppColors.accent,
                         ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.accent.withAlpha(40),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            '$_fatigueLevel/5',
-                            style: const TextStyle(
-                              color: AppColors.accent,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _elapsedLabel,
+                          style: const TextStyle(
+                            color: AppColors.accent,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _notesController,
-                    maxLines: 3,
-                    style: const TextStyle(color: AppColors.textPrimary),
-                    decoration: InputDecoration(
-                      labelText: 'Notes',
-                      labelStyle: const TextStyle(color: Colors.grey),
-                      prefixIcon: const Icon(
-                        Icons.notes_outlined,
-                        color: AppColors.accent,
-                        size: 20,
+                ),
+            ],
+          ),
+          body: _loadingExercises
+              ? const Center(child: CircularProgressIndicator())
+              : ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    if (_performed.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 48),
+                        child: Center(
+                          child: Column(
+                            children: [
+                              const Icon(
+                                Icons.fitness_center,
+                                size: 40,
+                                color: AppColors.textSecondary,
+                              ),
+                              const SizedBox(height: 12),
+                              const Text(
+                                'No exercises added yet',
+                                style: TextStyle(
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                      filled: true,
-                      fillColor: Theme.of(
-                        context,
-                      ).colorScheme.surfaceContainerHigh,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Colors.white10),
+                    for (var i = 0; i < _performed.length; i++)
+                      _ExerciseCard(
+                        draft: _performed[i],
+                        onRemoveExercise: () => _removeExercise(i),
+                        onAddSet: () => _addSet(i),
+                        onRemoveSet: (setIndex) => _removeSet(i, setIndex),
+                        onUpdateSet:
+                            (setIndex, {reps, weightKg, isCompleted}) =>
+                                _updateSet(
+                                  i,
+                                  setIndex,
+                                  reps: reps,
+                                  weightKg: weightKg,
+                                  isCompleted: isCompleted,
+                                ),
                       ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Colors.white10),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: _addExerciseDialog,
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(46),
+                        side: const BorderSide(color: AppColors.accent),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(
+                      icon: const Icon(Icons.add, color: AppColors.accent),
+                      label: const Text(
+                        'Add Exercise',
+                        style: TextStyle(
                           color: AppColors.accent,
-                          width: 1.5,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 24),
-                ],
-              ),
-        bottomNavigationBar: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: ElevatedButton(
-              onPressed: _performed.isEmpty ? null : _saveWorkout,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.accent,
-                minimumSize: const Size.fromHeight(48),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                    const SizedBox(height: 24),
+                    const Row(
+                      children: [
+                        Icon(Icons.bolt, color: AppColors.accent, size: 18),
+                        SizedBox(width: 8),
+                        Text(
+                          'Perceived Fatigue (RPE)',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textPrimary,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      decoration: BoxDecoration(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHigh,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: SliderTheme(
+                              data: SliderTheme.of(context).copyWith(
+                                activeTrackColor: AppColors.accent,
+                                thumbColor: AppColors.accent,
+                                inactiveTrackColor: Colors.grey.withAlpha(60),
+                                overlayColor: AppColors.accent.withAlpha(40),
+                              ),
+                              child: Slider(
+                                value: _fatigueLevel.toDouble(),
+                                min: 1,
+                                max: 5,
+                                divisions: 4,
+                                label: '$_fatigueLevel',
+                                onChanged: (v) =>
+                                    setState(() => _fatigueLevel = v.round()),
+                              ),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.accent.withAlpha(40),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '$_fatigueLevel/5',
+                              style: const TextStyle(
+                                color: AppColors.accent,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _notesController,
+                      maxLines: 3,
+                      style: const TextStyle(color: AppColors.textPrimary),
+                      decoration: InputDecoration(
+                        labelText: 'Notes',
+                        labelStyle: const TextStyle(color: Colors.grey),
+                        prefixIcon: const Icon(
+                          Icons.notes_outlined,
+                          color: AppColors.accent,
+                          size: 20,
+                        ),
+                        filled: true,
+                        fillColor: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHigh,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Colors.white10),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Colors.white10),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: AppColors.accent,
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
                 ),
-              ),
-              child: Text(
-                _isEditing ? 'Save Changes' : 'Finish Workout',
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontWeight: FontWeight.bold,
+          bottomNavigationBar: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: ElevatedButton(
+                onPressed: _performed.isEmpty ? null : _saveWorkout,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.accent,
+                  minimumSize: const Size.fromHeight(48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: Text(
+                  _isEditing ? 'Save Changes' : 'Finish Workout',
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -1067,10 +1086,9 @@ class _SetRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            Checkbox(
-              value: set.isCompleted,
-              activeColor: AppColors.accent,
-              onChanged: (v) => onUpdate(isCompleted: v ?? false),
+            _CompletionToggle(
+              isCompleted: set.isCompleted,
+              onChanged: (v) => onUpdate(isCompleted: v),
             ),
           ],
         ),
@@ -1142,6 +1160,8 @@ class _NumberFieldState extends State<_NumberField> {
         isDense: true,
         filled: true,
         fillColor: Colors.white.withAlpha(20),
+        contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        constraints: const BoxConstraints(minHeight: 48),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
@@ -1150,6 +1170,36 @@ class _NumberFieldState extends State<_NumberField> {
       onChanged: (text) {
         widget.onChanged(double.tryParse(text) ?? 0);
       },
+    );
+  }
+}
+
+class _CompletionToggle extends StatelessWidget {
+  final bool isCompleted;
+  final ValueChanged<bool> onChanged;
+
+  const _CompletionToggle({required this.isCompleted, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 48,
+      height: 48,
+      child: Material(
+        color: isCompleted
+            ? AppColors.accent.withAlpha(50)
+            : Colors.white.withAlpha(20),
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => onChanged(!isCompleted),
+          child: Icon(
+            isCompleted ? Icons.check_rounded : Icons.check_outlined,
+            color: isCompleted ? AppColors.accent : Colors.grey,
+            size: 22,
+          ),
+        ),
+      ),
     );
   }
 }

@@ -185,25 +185,25 @@ class _RoutineEditorScreenState extends State<RoutineEditorScreen> {
     );
   }
 
-  // Tasto Clear personalizzato della stessa altezza dei dropdown
+  // Tasto Clear filtri, stessa altezza dei dropdown, ora come icona
   Widget _buildClearButton({required VoidCallback onPressed}) {
-    return InkWell(
-      onTap: onPressed,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        height: 36,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        decoration: BoxDecoration(
-          color: Colors.redAccent.withAlpha(20),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        alignment: Alignment.center,
-        child: const Text(
-          'Clear',
-          style: TextStyle(
+    return Tooltip(
+      message: 'Clear filters',
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          height: 36,
+          width: 36,
+          decoration: BoxDecoration(
+            color: Colors.redAccent.withAlpha(20),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          alignment: Alignment.center,
+          child: const Icon(
+            Icons.filter_alt_off,
             color: Colors.redAccent,
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
+            size: 18,
           ),
         ),
       ),

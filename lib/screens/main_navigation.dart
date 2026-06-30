@@ -18,7 +18,7 @@ class _MainNavigationState extends State<MainNavigation> {
   final _workoutKey = GlobalKey<WorkoutScreenState>();
 
   late final List<Widget> _screens = [
-    HomeScreen(key: _homeKey),
+    HomeScreen(key: _homeKey, onNavigateToTab: _onDestinationSelected),
     WorkoutScreen(key: _workoutKey),
     const RoutinesScreen(),
     const ExercisesScreen(),

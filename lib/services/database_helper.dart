@@ -463,6 +463,27 @@ class DatabaseHelper {
     return routines.length;
   }
 
+  /// Returns the most recently logged weight (kg) per exercise from completed
+  /// sessions, keyed by exercise id. Sessions are scanned newest-first.
+  Future<Map<String, double>> getLastWeightsByExercise() async {
+    final sessions = await getWorkoutSessions();
+    final weights = <String, double>{};
+
+    for (final session in sessions) {
+      if (session.status != WorkoutStatus.completed) continue;
+      for (final pe in session.performedExercises) {
+        if (weights.containsKey(pe.exerciseId)) continue;
+        final withWeight = pe.sets
+            .where((s) => s.isCompleted && s.weightKg > 0)
+            .toList();
+        if (withWeight.isNotEmpty) {
+          weights[pe.exerciseId] = withWeight.last.weightKg;
+        }
+      }
+    }
+    return weights;
+  }
+
   // --- Recurring weekly schedules ---
 
   Future<List<RecurringSchedule>> getRecurringSchedules() async {

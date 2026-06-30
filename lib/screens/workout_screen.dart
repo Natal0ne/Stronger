@@ -28,12 +28,12 @@ class WorkoutScreenState extends State<WorkoutScreen> {
   void refreshAll() {
     setState(() {
       _historyFuture = DatabaseHelper.instance.getWorkoutSessions().then(
-        (sessions) => sessions
-            .where((s) => s.status != WorkoutStatus.scheduled)
-            .toList(),
+        (sessions) =>
+            sessions.where((s) => s.status != WorkoutStatus.scheduled).toList(),
       );
-      _scheduledFuture =
-          DatabaseHelper.instance.getScheduledSessionsForWeek(DateTime.now());
+      _scheduledFuture = DatabaseHelper.instance.getScheduledSessionsForWeek(
+        DateTime.now(),
+      );
     });
   }
 
@@ -79,6 +79,7 @@ class WorkoutScreenState extends State<WorkoutScreen> {
     );
     if (saved == true) _refreshAll();
   }
+
   Future<void> _confirmDelete(WorkoutSession session) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -107,295 +108,15 @@ class WorkoutScreenState extends State<WorkoutScreen> {
     }
   }
 
-  Color _rpeColor(int rpe) {
-    if (rpe <= 2) return Colors.greenAccent;
-    if (rpe == 3) return Colors.amberAccent;
-    return Colors.redAccent;
-  }
-
   void _showSessionDetail(WorkoutSession session) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        final isCompleted = session.status == WorkoutStatus.completed;
-        return Container(
-          height: MediaQuery.of(context).size.height * 0.8,
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainer,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      session.title,
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                  ),
-                  if (isCompleted)
-                    IconButton(
-                      icon: const Icon(Icons.edit_outlined, color: AppColors.accent),
-                      tooltip: 'Edit workout',
-                      onPressed: () => _editWorkout(session),
-                    ),
-                  IconButton(
-                    icon: const Icon(
-                      Icons.delete_outline,
-                      color: Colors.redAccent,
-                    ),
-                    onPressed: () {
-                      Navigator.pop(context);
-                      _confirmDelete(session);
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '${session.date.day}/${session.date.month}/${session.date.year}',
-                style: const TextStyle(color: AppColors.textSecondary),
-              ),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.timer_outlined,
-                        size: 18,
-                        color: AppColors.accent,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '${session.durationMinutes} min',
-                        style: const TextStyle(color: AppColors.textPrimary),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(width: 16),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.fitness_center,
-                        size: 18,
-                        color: AppColors.accent,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '${session.performedExercises.length} exercises',
-                        style: const TextStyle(color: AppColors.textPrimary),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isCompleted
-                          ? Colors.green.withAlpha(40)
-                          : AppColors.advanced.withAlpha(40),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      session.status.name.toUpperCase(),
-                      style: TextStyle(
-                        color: isCompleted
-                            ? Colors.greenAccent
-                            : AppColors.advanced,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  if (isCompleted)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.purpleAccent.withAlpha(40),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        '${session.totalVolumeLifted.toStringAsFixed(0)} KG VOLUME',
-                        style: const TextStyle(
-                          color: Colors.purpleAccent,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _rpeColor(session.fatigueLevel).withAlpha(40),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      'RPE ${session.fatigueLevel}/5',
-                      style: TextStyle(
-                        color: _rpeColor(session.fatigueLevel),
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const Divider(height: 32, color: Colors.white10),
-              Expanded(
-                child: session.performedExercises.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'No exercises logged for this session.',
-                          style: TextStyle(color: AppColors.textSecondary),
-                        ),
-                      )
-                    : ListView(
-                        children: [
-                          for (var ex in session.performedExercises)
-                            Card(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.surfaceContainerHigh,
-                              margin: const EdgeInsets.only(bottom: 12),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.all(14),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        const Icon(
-                                          Icons.fitness_center,
-                                          size: 16,
-                                          color: AppColors.accent,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Text(
-                                            _exerciseNames[ex.exerciseId] ??
-                                                ex.exerciseId,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              color: AppColors.textPrimary,
-                                              fontSize: 15,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 12),
-
-                                    for (var s in ex.sets)
-                                      Padding(
-                                        padding: const EdgeInsets.only(
-                                          bottom: 6,
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            Container(
-                                              width: 22,
-                                              height: 22,
-                                              alignment: Alignment.center,
-                                              decoration: BoxDecoration(
-                                                color: AppColors.accent
-                                                    .withAlpha(30),
-                                                shape: BoxShape.circle,
-                                              ),
-                                              child: Text(
-                                                '${s.setNumber}',
-                                                style: const TextStyle(
-                                                  color: AppColors.accent,
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 10),
-                                            Text(
-                                              '${s.weightKg}kg × ${s.reps} reps',
-                                              style: const TextStyle(
-                                                color: AppColors.textSecondary,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            if (!s.isCompleted)
-                                              const Text(
-                                                '(not completed)',
-                                                style: TextStyle(
-                                                  color: Colors.grey,
-                                                  fontSize: 11,
-                                                  fontStyle: FontStyle.italic,
-                                                ),
-                                              )
-                                            else
-                                              const Icon(
-                                                Icons.check_circle,
-                                                size: 14,
-                                                color: Colors.greenAccent,
-                                              ),
-                                          ],
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          if (session.notes.isNotEmpty) ...[
-                            const SizedBox(height: 4),
-                            const Text(
-                              'Notes',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              session.notes,
-                              style: const TextStyle(
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-              ),
-            ],
-          ),
-        );
+    showSessionDetailSheet(
+      context,
+      session,
+      _exerciseNames,
+      onEdit: () => _editWorkout(session),
+      onDelete: () {
+        Navigator.pop(context);
+        _confirmDelete(session);
       },
     );
   }
@@ -779,4 +500,306 @@ class _HistoryCard extends StatelessWidget {
       ),
     );
   }
+}
+
+Color _sessionRpeColor(int rpe) {
+  if (rpe <= 2) return Colors.greenAccent;
+  if (rpe == 3) return Colors.amberAccent;
+  return Colors.redAccent;
+}
+
+/// Shared bottom-sheet detail view for a workout session.
+/// Used by both the History tab and the Home screen's "Last Session" card,
+/// so tapping a session always opens the same detailed overview.
+void showSessionDetailSheet(
+  BuildContext context,
+  WorkoutSession session,
+  Map<String, String> exerciseNames, {
+  VoidCallback? onEdit,
+  VoidCallback? onDelete,
+}) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (context) {
+      final isCompleted = session.status == WorkoutStatus.completed;
+      return Container(
+        height: MediaQuery.of(context).size.height * 0.8,
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainer,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    session.title,
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+                if (isCompleted && onEdit != null)
+                  IconButton(
+                    icon: const Icon(
+                      Icons.edit_outlined,
+                      color: AppColors.accent,
+                    ),
+                    tooltip: 'Edit workout',
+                    onPressed: onEdit,
+                  ),
+                if (onDelete != null)
+                  IconButton(
+                    icon: const Icon(
+                      Icons.delete_outline,
+                      color: Colors.redAccent,
+                    ),
+                    onPressed: onDelete,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${session.date.day}/${session.date.month}/${session.date.year}',
+              style: const TextStyle(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.timer_outlined,
+                      size: 18,
+                      color: AppColors.accent,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${session.durationMinutes} min',
+                      style: const TextStyle(color: AppColors.textPrimary),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 16),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.fitness_center,
+                      size: 18,
+                      color: AppColors.accent,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${session.performedExercises.length} exercises',
+                      style: const TextStyle(color: AppColors.textPrimary),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isCompleted
+                        ? Colors.green.withAlpha(40)
+                        : AppColors.advanced.withAlpha(40),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    session.status.name.toUpperCase(),
+                    style: TextStyle(
+                      color: isCompleted
+                          ? Colors.greenAccent
+                          : AppColors.advanced,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                if (isCompleted)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.purpleAccent.withAlpha(40),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '${session.totalVolumeLifted.toStringAsFixed(0)} KG VOLUME',
+                      style: const TextStyle(
+                        color: Colors.purpleAccent,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _sessionRpeColor(session.fatigueLevel).withAlpha(40),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'RPE ${session.fatigueLevel}/5',
+                    style: TextStyle(
+                      color: _sessionRpeColor(session.fatigueLevel),
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 32, color: Colors.white10),
+            Expanded(
+              child: session.performedExercises.isEmpty
+                  ? const Center(
+                      child: Text(
+                        'No exercises logged for this session.',
+                        style: TextStyle(color: AppColors.textSecondary),
+                      ),
+                    )
+                  : ListView(
+                      children: [
+                        for (var ex in session.performedExercises)
+                          Card(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerHigh,
+                            margin: const EdgeInsets.only(bottom: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.fitness_center,
+                                        size: 16,
+                                        color: AppColors.accent,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          exerciseNames[ex.exerciseId] ??
+                                              ex.exerciseId,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: AppColors.textPrimary,
+                                            fontSize: 15,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+
+                                  for (var s in ex.sets)
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 6),
+                                      child: Row(
+                                        children: [
+                                          Container(
+                                            width: 22,
+                                            height: 22,
+                                            alignment: Alignment.center,
+                                            decoration: BoxDecoration(
+                                              color: AppColors.accent.withAlpha(
+                                                30,
+                                              ),
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: Text(
+                                              '${s.setNumber}',
+                                              style: const TextStyle(
+                                                color: AppColors.accent,
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Text(
+                                            '${s.weightKg}kg × ${s.reps} reps',
+                                            style: const TextStyle(
+                                              color: AppColors.textSecondary,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          if (!s.isCompleted)
+                                            const Text(
+                                              '(not completed)',
+                                              style: TextStyle(
+                                                color: Colors.grey,
+                                                fontSize: 11,
+                                                fontStyle: FontStyle.italic,
+                                              ),
+                                            )
+                                          else
+                                            const Icon(
+                                              Icons.check_circle,
+                                              size: 14,
+                                              color: Colors.greenAccent,
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        if (session.notes.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Notes',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            session.notes,
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
 }
