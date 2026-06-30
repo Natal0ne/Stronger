@@ -1,36 +1,59 @@
 import 'package:flutter/material.dart';
+import 'package:stronger/screens/main_navigation.dart';
+import 'package:stronger/theme/app_colors.dart';
+import 'package:stronger/services/database_helper.dart';
+import 'package:flutter/foundation.dart';
+import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
+import 'package:sqflite/sqflite.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  if (kIsWeb) {
+    databaseFactory = databaseFactoryFfiWeb;
+  }
+
+  await DatabaseHelper.instance.database;
+
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Be Stronger!',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+        useMaterial3: true,
+        brightness: Brightness.dark,
+
+        colorScheme: const ColorScheme.dark(
+          surface: AppColors.backgroundSurface,
+          surfaceContainer: AppColors.surfaceContainer,
+          primary: AppColors.accent,
+        ),
+
+        dialogTheme: const DialogThemeData(
+          backgroundColor: AppColors.surfaceContainer,
+          surfaceTintColor: Colors.transparent,
+        ),
+
+        appBarTheme: const AppBarTheme(
+          backgroundColor: AppColors.surfaceContainer,
+          elevation: 0,
+        ),
+
+        navigationBarTheme: const NavigationBarThemeData(
+          backgroundColor: AppColors.surfaceContainer,
+          indicatorColor: AppColors.accent,
+        ),
+
+        scaffoldBackgroundColor: const ColorScheme.dark().surface,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const MainNavigation(),
     );
   }
 }
