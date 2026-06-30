@@ -819,7 +819,7 @@ class _ExercisesScreenState extends State<ExercisesScreen> {
               decoration: InputDecoration(
                 hintText: 'Search exercise or descriptions...',
                 hintStyle: const TextStyle(color: Colors.grey),
-                prefixIcon: const Icon(Icons.search, color: AppColors.accent),
+                prefixIcon: const Icon(Icons.search, color: Colors.grey),
                 suffixIcon: _searchController.text.isNotEmpty
                     ? IconButton(
                         icon: const Icon(Icons.clear, color: Colors.grey),
@@ -829,6 +829,10 @@ class _ExercisesScreenState extends State<ExercisesScreen> {
                 filled: true,
                 fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
                 border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey.withAlpha(80)),
+                ),
+                enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide(color: Colors.grey.withAlpha(80)),
                 ),
