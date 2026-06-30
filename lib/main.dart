@@ -44,6 +44,7 @@ class MyApp extends StatelessWidget {
         appBarTheme: const AppBarTheme(
           backgroundColor: AppColors.surfaceContainer,
           elevation: 0,
+          centerTitle: true,
         ),
 
         navigationBarTheme: const NavigationBarThemeData(

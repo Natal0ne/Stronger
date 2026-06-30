@@ -770,10 +770,19 @@ class _ExercisesScreenState extends State<ExercisesScreen> {
       ),
     );
 
-    nameController.dispose();
-    descriptionController.dispose();
-    repsController.dispose();
-    notesController.dispose();
+    // Dispose the controllers only after the dialog's closing route
+    // transition has fully finished building/animating. Disposing them
+    // synchronously right after `await showDialog(...)` races with the
+    // still-in-flight exit animation (the dialog route is still being
+    // rebuilt while it animates off-screen), which is what was causing
+    // "A TextEditingController was used after being disposed" and the
+    // related `_dependents.isEmpty` assertion failure.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      nameController.dispose();
+      descriptionController.dispose();
+      repsController.dispose();
+      notesController.dispose();
+    });
   }
 
   @override
