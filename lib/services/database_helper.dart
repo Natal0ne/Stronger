@@ -1,10 +1,10 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
-import 'package:stronger/models/enums.dart';
 import 'package:stronger/models/exercise.dart';
 import 'package:stronger/models/routine.dart';
 import 'package:stronger/models/routine_exercise.dart';
 import 'package:stronger/services/default_exercises.dart';
+import 'package:stronger/services/default_routines.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -97,6 +97,7 @@ class DatabaseHelper {
     ''');
 
     await _seedDefaultExercises(db);
+    await _seedDefaultRoutines(db);
   }
 
   // --- CRUD Methods for Routines ---
@@ -167,11 +168,7 @@ class DatabaseHelper {
 
   Future<void> deleteRoutine(String id) async {
     final db = await instance.database;
-    await db.delete(
-      'routines',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    await db.delete('routines', where: 'id = ?', whereArgs: [id]);
   }
 
   // --- CRUD Methods for Exercises ---
@@ -187,11 +184,7 @@ class DatabaseHelper {
 
   Future<void> deleteExercise(String id) async {
     final db = await instance.database;
-    await db.delete(
-      'exercises',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    await db.delete('exercises', where: 'id = ?', whereArgs: [id]);
   }
 
   Future<List<Exercise>> getExercises() async {
@@ -203,13 +196,65 @@ class DatabaseHelper {
     return List.generate(maps.length, (i) => Exercise.fromMap(maps[i]));
   }
 
+  Future<List<RoutineExercise>> getExercisesForRoutine(String routineId) async {
+    final db = await instance.database;
+
+    // Usiamo una JOIN per prendere il nome dalla tabella exercises
+    final List<Map<String, dynamic>> maps = await db.rawQuery(
+      '''
+        SELECT 
+          re.exercise_id, 
+          re.sets, 
+          re.reps, 
+          e.name 
+        FROM routine_exercises re
+        JOIN exercises e ON re.exercise_id = e.id
+        WHERE re.routine_id = ?
+      ''',
+      [routineId],
+    );
+
+    return List.generate(maps.length, (i) {
+      return RoutineExercise(
+        exerciseId: maps[i]['exercise_id'],
+        name: maps[i]['name'], // Ecco che il nome arriva dalla JOIN!
+        sets: maps[i]['sets'],
+        reps: maps[i]['reps'],
+      );
+    });
+  }
+
   Future<void> _seedDefaultExercises(Database db) async {
     for (var exercise in defaultExercisesList) {
       await db.insert(
         'exercises',
         exercise.toMap(),
-        conflictAlgorithm: ConflictAlgorithm.ignore, // Skip if it already exists
+        conflictAlgorithm:
+            ConflictAlgorithm.ignore, // Skip if it already exists
       );
+    }
+  }
+
+  Future<void> _seedDefaultRoutines(Database db) async {
+    for (var routine in defaultRoutinesList) {
+      // Inseriamo la routine nella tabella 'routines'
+      await db.insert('routines', {
+        'id': routine.id,
+        'name': routine.name,
+        'description': routine.description,
+        'targetGoal': routine.goal.name,
+        'estimatedDurationMinutes': routine.estimatedDurationMinutes,
+      });
+
+      // Inseriamo i collegamenti nella tabella 'routine_exercises'
+      for (var routineEx in routine.exercises) {
+        await db.insert('routine_exercises', {
+          'routine_id': routine.id,
+          'exercise_id': routineEx.exerciseId,
+          'sets': routineEx.sets,
+          'reps': routineEx.reps,
+        });
+      }
     }
   }
 

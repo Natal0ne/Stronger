@@ -6,8 +6,17 @@ class RoutineExercise {
 
   RoutineExercise({
     required this.exerciseId,
-    required this.name,
+    this.name = '',
     required this.sets,
     required this.reps,
   });
+
+  Map<String, dynamic> toMap(String routineId) {
+    return {
+      'routine_id': routineId,
+      'exercise_id': exerciseId,
+      'sets': sets,
+      'reps': reps,
+    };
+  }
 }
