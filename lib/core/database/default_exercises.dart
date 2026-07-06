@@ -1,0 +1,2 @@
+final List<Exercise> defaultExercisesList = [
+];
