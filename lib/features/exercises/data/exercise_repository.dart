@@ -5,7 +5,6 @@ import 'package:stronger/core/models/routine_exercise.dart';
 import 'package:stronger/core/database/database_provider.dart';
 
 final exerciseRepositoryProvider = Provider<ExerciseRepository>((ref) {
-  // Otteniamo l'istanza del database iniettata sincronicamente da Riverpod
   final db = ref.watch(databaseProvider);
   return ExerciseRepository(db);
 });
@@ -43,7 +42,7 @@ class ExerciseRepository {
     JOIN exercises e ON re.exercise_id = e.id
     WHERE re.routine_id = ?
     ''',
-    [routineId],
+      [routineId],
     );
 
     return List.generate(maps.length, (i) {
