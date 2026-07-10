@@ -19,7 +19,6 @@ class TodayWorkoutCard extends ConsumerWidget {
     if (todaySession == null) return;
     final saved = await Navigator.of(context).push<bool>(
       ActiveWorkoutScreen.route(
-        // <--- ALLINEATO CON LA ROTTA DI TRANSIZIONE TRASLUCIDA
         existingSession: todaySession,
         routineId: todaySession!.routineId,
         initialTitle: todaySession!.title,
