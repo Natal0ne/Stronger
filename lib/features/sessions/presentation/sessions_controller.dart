@@ -42,6 +42,7 @@ class ScheduledSessionsNotifier extends AsyncNotifier<List<WorkoutSession>> {
     ref.invalidateSelf();
     ref.invalidate(historySessionsProvider);
     ref.invalidate(dashboardProvider);
+    ref.invalidate(exerciseHistoryProvider);
   }
 }
 

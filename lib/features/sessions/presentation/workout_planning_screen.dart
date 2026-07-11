@@ -10,6 +10,7 @@ import 'package:stronger/core/theme/enum_theme_extensions.dart';
 import 'package:stronger/features/routines/data/routine_repository.dart';
 import 'package:stronger/features/sessions/data/session_repository.dart';
 import 'package:stronger/features/sessions/presentation/sessions_controller.dart';
+import 'package:stronger/features/dashboard/presentation/dashboard_controller.dart';
 
 class WorkoutPlanningScreen extends ConsumerStatefulWidget {
   const WorkoutPlanningScreen({super.key});
@@ -115,6 +116,8 @@ class _WorkoutPlanningScreenState extends ConsumerState<WorkoutPlanningScreen> {
 
       ref.invalidate(scheduledSessionsProvider);
       ref.invalidate(historySessionsProvider);
+      ref.invalidate(exerciseHistoryProvider);
+      ref.invalidate(dashboardProvider);
 
       _loadData();
       return;
@@ -157,6 +160,7 @@ class _WorkoutPlanningScreenState extends ConsumerState<WorkoutPlanningScreen> {
 
     ref.invalidate(scheduledSessionsProvider);
     ref.invalidate(historySessionsProvider);
+    ref.invalidate(dashboardProvider);
 
     _loadData();
   }
